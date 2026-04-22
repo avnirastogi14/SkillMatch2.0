@@ -35,6 +35,8 @@ def load_esco_roles():
         reader = csv.DictReader(f)
 
         for row in reader:
+            esco_id = row["uri"].split("/")[-1]
+
             cur.execute("""
                 INSERT INTO roles (name, description, source, esco_id)
                 VALUES (%s, %s, 'ESCO', %s)
@@ -42,7 +44,7 @@ def load_esco_roles():
             """, (
                 row["preferredLabel"],
                 row.get("description", ""),
-                row["id"]
+                esco_id
             ))
 
     conn.commit()
