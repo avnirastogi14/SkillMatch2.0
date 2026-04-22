@@ -1,11 +1,16 @@
 import csv
+import os
 from db import get_connection
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def load_onet_roles():
     conn = get_connection()
     cur = conn.cursor()
 
-    with open("backend/data/onet/Occupation Titles.txt", newline='', encoding="utf-8") as f:
+    path = os.path.join(BASE_DIR, "data/onet/Occupation Titles.txt")
+
+    with open(path, newline='', encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter="|")
 
         for row in reader:
@@ -22,11 +27,14 @@ def load_onet_roles():
     cur.close()
     conn.close()
 
+
 def load_onet_skills():
     conn = get_connection()
     cur = conn.cursor()
 
-    with open("backend/data/onet/Skills.txt", newline='', encoding="utf-8") as f:
+    path = os.path.join(BASE_DIR, "data/onet/Skills.txt")
+
+    with open(path, newline='', encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter="|")
 
         for row in reader:
@@ -40,11 +48,14 @@ def load_onet_skills():
     cur.close()
     conn.close()
 
+
 def load_onet_tech_skills():
     conn = get_connection()
     cur = conn.cursor()
 
-    with open("backend/data/onet/Technology Skills.txt", newline='', encoding="utf-8") as f:
+    path = os.path.join(BASE_DIR, "data/onet/Technology Skills.txt")
+
+    with open(path, newline='', encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter="|")
 
         for row in reader:
@@ -58,11 +69,14 @@ def load_onet_tech_skills():
     cur.close()
     conn.close()
 
+
 def load_onet_aliases():
     conn = get_connection()
     cur = conn.cursor()
 
-    with open("backend/data/onet/Alternate Titles.txt", newline='', encoding="utf-8") as f:
+    path = os.path.join(BASE_DIR, "data/onet/Alternate Titles.txt")
+
+    with open(path, newline='', encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter="|")
 
         for row in reader:
