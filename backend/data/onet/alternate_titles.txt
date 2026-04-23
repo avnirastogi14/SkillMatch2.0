@@ -1,4 +1,4 @@
-O*NET-SOC_Code	Alternate_Title	Short_Title	Source(s)
+O*NET-SOC Code	Alternate_Title	Short_Title	Source(s)
 11-1011.00	Aeronautics Commission Director	n/a	08
 11-1011.00	Agency Owner	n/a	10
 11-1011.00	Agricultural Services Director	n/a	08
