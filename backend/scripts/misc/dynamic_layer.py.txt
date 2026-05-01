@@ -1,0 +1,187 @@
+import psycopg2
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
+from dotenv import load_dotenv
+import os
+
+# SETUP
+load_dotenv()
+
+DB_URL = os.getenv("DATABASE_URL")
+
+
+def get_connection():
+    return psycopg2.connect(DB_URL)
+
+
+# FETCH DATA
+def fetch_roles_data(conn):
+    query = """
+    SELECT r.id, r.title,
+           COALESCE(array_agg(DISTINCT s.name), '{}') AS skills,
+           COALESCE(array_agg(DISTINCT k.name), '{}') AS knowledge,
+           COALESCE(array_agg(DISTINCT t.name), '{}') AS technologies
+    FROM roles r
+    LEFT JOIN role_skills rs ON r.id = rs.role_id
+    LEFT JOIN skills s ON rs.skill_id = s.id
+    LEFT JOIN role_knowledge rk ON r.id = rk.role_id
+    LEFT JOIN knowledge k ON rk.knowledge_id = k.id
+    LEFT JOIN role_technologies rt ON r.id = rt.role_id
+    LEFT JOIN technologies t ON rt.tech_id = t.id
+    GROUP BY r.id;
+    """
+
+    with conn.cursor() as cur:
+        cur.execute(query)
+        rows = cur.fetchall()
+
+    roles = []
+    for row in rows:
+        roles.append({
+            "id": row[0],
+            "title": row[1],
+            "skills": row[2],
+            "knowledge": row[3],
+            "technologies": row[4],
+        })
+
+    return roles
+
+
+# TEXT REPRESENTATION
+def role_to_text(r):
+    parts = []
+
+    if r.get("title"):
+        parts.append(str(r["title"]))
+
+    if r.get("description"):
+        parts.append(str(r["description"]))
+
+    if r.get("skills"):
+        parts.append(" ".join([str(s) for s in r["skills"] if s]))
+
+    if r.get("technologies"):
+        parts.append(" ".join([str(t) for t in r["technologies"] if t]))
+
+    return " ".join(parts)
+
+
+# VECTOR BUILDING
+def build_vectors(role_texts):
+    vectorizer = TfidfVectorizer(max_features=5000)
+    X = vectorizer.fit_transform(role_texts)
+    return X, vectorizer
+
+
+# CLUSTERING
+def cluster_roles(X, k=6):
+    model = KMeans(n_clusters=k, random_state=42, n_init=10)
+    labels = model.fit_predict(X)
+    return labels, model
+
+
+# EXTRACT CLUSTER KEYWORDS
+def get_cluster_keywords(model, vectorizer, top_n=10):
+    terms = vectorizer.get_feature_names_out()
+    clusters = {}
+
+    for i, center in enumerate(model.cluster_centers_):
+        indices = center.argsort()[-top_n:]
+        clusters[i] = [terms[j] for j in indices]
+
+    return clusters
+
+
+# NAME CLUSTERS (LIGHT LOGIC)
+def name_cluster(keywords):
+    text = " ".join(keywords)
+
+    if "data" in text or "ml" in text or "python" in text:
+        return "data_ai"
+    elif "web" in text or "javascript" in text or "react" in text:
+        return "web_dev"
+    elif "cloud" in text or "aws" in text or "docker" in text:
+        return "cloud_devops"
+    elif "security" in text:
+        return "cybersecurity"
+    elif "design" in text or "ui" in text:
+        return "product_design"
+
+    return "other"
+
+
+# STORE RESULTS
+def save_to_db(conn, roles, labels, cluster_names):
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS dynamic_it_roles (
+        role_id INT PRIMARY KEY,
+        title TEXT,
+        cluster INT,
+        track TEXT
+    );
+    """
+
+    insert_query = """
+    INSERT INTO dynamic_it_roles (role_id, title, cluster, track)
+    VALUES (%s, %s, %s, %s)
+    ON CONFLICT (role_id)
+    DO UPDATE SET
+        cluster = EXCLUDED.cluster,
+        track = EXCLUDED.track;
+    """
+
+    with conn.cursor() as cur:
+        cur.execute(create_table_query)
+
+        for i, role in enumerate(roles):
+            cur.execute(
+                insert_query,
+                (
+                    role["id"],
+                    role["title"],
+                    int(labels[i]),
+                    cluster_names[labels[i]]
+                )
+            )
+
+    conn.commit()
+
+
+# MAIN PIPELINE
+def build_dynamic_layer():
+    print("🚀 Building dynamic IT layer...")
+
+    conn = get_connection()
+
+    roles = fetch_roles_data(conn)
+    print(f"Loaded {len(roles)} roles")
+
+    role_texts = [role_to_text(r) for r in roles]
+
+    X, vectorizer = build_vectors(role_texts)
+    print("TF-IDF vectors created")
+
+    labels, model = cluster_roles(X)
+    print("Roles clustered")
+
+    cluster_keywords = get_cluster_keywords(model, vectorizer)
+
+    print("\n🔍 Cluster Insights:")
+    cluster_names = {}
+    for cluster_id, keywords in cluster_keywords.items():
+        name = name_cluster(keywords)
+        cluster_names[cluster_id] = name
+        print(f"Cluster {cluster_id} → {name}")
+        print(f"Keywords: {keywords}\n")
+
+    save_to_db(conn, roles, labels, cluster_names)
+    print("Dynamic IT layer saved to DB")
+
+    conn.close()
+    print("🔌 Connection closed")
+
+
+# ENTRY POINT
+if __name__ == "__main__":
+    build_dynamic_layer()

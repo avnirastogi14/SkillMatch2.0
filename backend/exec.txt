@@ -1,0 +1,9 @@
+source SM/bin/activate
+
+pip install -r requirements.txt
+
+psql -d skillmatch -f scripts/schema.sql
+
+export DB_URL="postgresql:///skillmatch"
+
+python scripts/run.py

@@ -1,0 +1,128 @@
+import psycopg2
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+DB_URL = os.getenv("DATABASE_URL")
+
+
+
+# DB CONNECTION
+
+def get_connection():
+    return psycopg2.connect(DB_URL)
+
+
+
+# OPTIONAL LLM NORMALIZATION (stub)
+
+def llm_normalize_list(items):
+    # Replace with real API later (Gemini/OpenAI)
+    return [x.strip().lower() for x in items]
+
+
+
+# NORMALIZATION
+
+def normalize_list(lst):
+    return set(x.strip().lower() for x in lst if x)
+
+
+
+# FETCH ROLES
+
+def fetch_roles(conn):
+    query = """
+    SELECT 
+        r.role_id,
+        r.title,
+        d.track,
+        COALESCE(array_agg(DISTINCT s.skill_name), '{}') AS skills,
+        COALESCE(array_agg(DISTINCT t.tech_name), '{}') AS technologies
+    FROM roles r
+    JOIN dynamic_it_roles d ON r.role_id = d.role_id
+    LEFT JOIN role_skills rs ON r.role_id = rs.role_id
+    LEFT JOIN skills s ON rs.skill_id = s.skill_id
+    LEFT JOIN role_technologies rt ON r.role_id = rt.role_id
+    LEFT JOIN technologies t ON rt.tech_id = t.tech_id
+    GROUP BY r.role_id, r.title, d.track;
+    """
+
+    with conn.cursor() as cur:
+        cur.execute(query)
+        rows = cur.fetchall()
+
+    roles = []
+    for row in rows:
+        roles.append({
+            "id": row[0],
+            "title": row[1],
+            "track": row[2],
+            "skills": row[3] or [],
+            "technologies": row[4] or [],
+        })
+
+    return roles
+
+
+
+# SCORING ENGINE
+
+def score_role(role, user):
+    score = 0
+
+    role_skills = normalize_list(role["skills"])
+    user_skills = normalize_list(user.get("skills", []))
+
+    role_tech = normalize_list(role["technologies"])
+    user_tech = normalize_list(user.get("technologies", []))
+
+    user_interests = set(user.get("interests", []))
+
+    # HARD FILTER
+    if user_interests and role["track"] not in user_interests:
+        if len(user_skills & role_skills) < 3:
+            return 0
+
+    # Skill match
+    skill_overlap = len(user_skills & role_skills)
+    score += skill_overlap * 4
+
+    # Tech match
+    tech_overlap = len(user_tech & role_tech)
+    score += tech_overlap * 3
+
+    # Interest match
+    if role["track"] in user_interests:
+        score += 8
+
+    # Bonus
+    if skill_overlap >= 5:
+        score += 5
+
+    return score
+
+
+
+# MAIN RECOMMENDER
+
+def recommend_roles(user_profile):
+    conn = get_connection()
+
+    # LLM normalization step
+    user_profile["skills"] = llm_normalize_list(user_profile.get("skills", []))
+    user_profile["technologies"] = llm_normalize_list(user_profile.get("technologies", []))
+
+    roles = fetch_roles(conn)
+
+    scored = []
+    for r in roles:
+        score = score_role(r, user_profile)
+        if score > 0:
+            scored.append((r, score))
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+
+    conn.close()
+
+    return scored[:5]
